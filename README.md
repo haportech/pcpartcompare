@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PartCompare
+
+Compare computer parts side by side — specs, benchmarks, and pricing for CPUs and GPUs.
+
+Built with [Next.js 16](https://nextjs.org), [Prisma 7](https://prisma.io), [Turso](https://turso.tech).
+
+## Features
+
+- **Side-by-side comparison** — select 2-4 parts and compare specs, benchmarks, and prices in a single table
+- **Color-coded scoring** — green for best value per field (higher clocks, lower TDP/prices)
+- **Benchmarks** — real performance data (Cinebench, Geekbench, 3DMark, game FPS)
+- **Shareable URLs** — `?parts=id1,id2` URLs for direct comparison links
+- **Mobile responsive** — card layout on phones, table layout on desktop
+- **Manual prices** — v1 uses curated pricing; automated pipeline coming in v2
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run seed           # populate database with 13 parts, 39 benchmarks, 13 prices
+npm run dev            # start dev server at http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000/compare to start comparing parts.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Layer | Choice |
+|-------|--------|
+| Framework | Next.js 16 (App Router, Turbopack) |
+| Database | SQLite (dev) / Turso (edge SQLite, production) |
+| ORM | Prisma 7 with libsql adapter |
+| Testing | Vitest + React Testing Library (planned) |
+| Styling | Tailwind CSS v4 |
+| Hosting | Vercel |
 
-## Learn More
+## Database
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run seed           # seed 6 CPUs + 7 GPUs with specs, benchmarks, prices
+npx prisma studio      # browse data in browser
+npx prisma db push     # sync schema changes to local DB
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+GET /api/parts         → { parts: Part[] } with nested prices[] and benchmarks[]
+```
 
-## Deploy on Vercel
+## Seed Data
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+13 parts across 6 CPU models (AMD Ryzen 7000 series, Intel Core 14th gen) and 7 GPU models (NVIDIA RTX 40 series, AMD Radeon RX 7000 series), each with 2-4 benchmarks and 1 manual price.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## v2 Roadmap
+
+- Amazon Creators API pricing pipeline
+- Automated price tracking with price history charts
+- Open data JSON dumps
+- More part categories (RAM, motherboards, storage, PSUs)
+- Crowdsourced benchmark submissions
+- Larger curated dataset (100+ parts)
+
+## License
+
+MIT
