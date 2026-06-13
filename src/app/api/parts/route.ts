@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 // Lazy-init Prisma to avoid cold-start overhead on every request
 async function getPrisma() {
@@ -12,16 +12,59 @@ async function getPrisma() {
   return new PrismaClient({ adapter });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const prisma = await getPrisma();
-    const parts = await prisma.part.findMany({
-      include: {
-        prices: true,
-        benchmarks: true,
-      },
-    });
-    return NextResponse.json({ parts });
+    const { searchParams } = new URL(request.url);
+
+    const type = searchParams.get("type");
+    const search = searchParams.get("search");
+    const ids = searchParams.get("ids");
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
+
+    const where: any = {};
+
+    if (type) {
+      where.type = type;
+    }
+
+    if (ids) {
+      where.id = { in: ids.split(",") };
+    }
+
+    if (search) {
+      where.OR = [
+        { brand: { contains: search } },
+        { model: { contains: search } },
+      ];
+    }
+
+    const [parts, total] = await Promise.all([
+      prisma.part.findMany({
+        where,
+        include: {
+          prices: true,
+          benchmarks: true,
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { brand: "asc" },
+      }),
+      prisma.part.count({ where }),
+    ]);
+
+    // Get distinct types
+    const typesRaw = ids
+      ? []
+      : await prisma.part.findMany({
+          select: { type: true },
+          distinct: ["type"],
+          orderBy: { type: "asc" },
+        });
+    const types = [...new Set(typesRaw.map((t: { type: string }) => t.type))].sort();
+
+    return NextResponse.json({ parts, total, types, page, limit });
   } catch (error) {
     console.error("Failed to fetch parts:", error);
     return NextResponse.json(
