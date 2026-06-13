@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Exo, Roboto_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const exo = Exo({
+  variable: "--font-exo",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const robotoMono = Roboto_Mono({
+  variable: "--font-roboto-mono",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "700"],
 });
 
 export const metadata: Metadata = {
@@ -25,15 +27,18 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${exo.variable} ${robotoMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">
-        <header className="border-b border-zinc-800 px-6 py-4">
-          <div className="mx-auto flex max-w-6xl items-center gap-3">
-            <a href="/compare" className="text-xl font-bold tracking-tight text-zinc-100">
-              PartCompare
+      <body className="min-h-full flex flex-col" style={{ backgroundColor: "#0F172A", color: "#F8FAFC" }}>
+        <header style={{ borderBottom: "1px solid #1E293B", padding: "16px 24px" }}>
+          <div className="mx-auto flex max-w-7xl items-center gap-3">
+            <a href="/compare" className="text-xl font-bold tracking-tight" style={{ color: "#F8FAFC", fontFamily: "var(--font-exo)" }}>
+              <span style={{ color: "#22C55E" }}>Part</span>Compare
             </a>
-            <span className="text-xs text-zinc-500">v0.1</span>
+            <span className="text-xs" style={{ color: "#475569" }}>v0.1</span>
+            <span className="ml-auto text-xs" style={{ color: "#475569" }}>
+              {`${"39"}K+ parts`}
+            </span>
           </div>
         </header>
         {children}

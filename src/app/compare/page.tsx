@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState, useMemo, Suspense, useCallback } from "react";
+import { useEffect, useState, useMemo, Suspense, useCallback, useRef } from "react";
 
 type Part = {
   id: string;
@@ -13,8 +13,6 @@ type Part = {
   benchmarks: { benchmark: string; score: number; unit: string }[];
 };
 
-type PartType = string;
-
 const BENCHMARK_LABELS: Record<string, string> = {
   cinebench_r23_mt: "Cinebench R23 (Multi)",
   geekbench6_single: "Geekbench 6 (Single)",
@@ -22,86 +20,105 @@ const BENCHMARK_LABELS: Record<string, string> = {
   cyberpunk_2077_1440p: "Cyberpunk 2077 (1440p)",
 };
 
-const CPU_SPECS = ["cores", "threads", "baseClock", "boostClock", "tdp", "socket", "cache", "lithography"];
-const GPU_SPECS = ["vram", "cudaCores", "boostClock", "tdp", "memoryBus", "memoryBandwidth"];
+const CPU_KEYS = ["cores", "threads", "baseClock", "boostClock", "tdp", "socket", "cache", "lithography"];
+const GPU_KEYS = ["vram", "cudaCores", "boostClock", "tdp", "memoryBus", "memoryBandwidth"];
 
 const SPEC_LABELS: Record<string, string> = {
-  cores: "Cores",
-  threads: "Threads",
-  baseClock: "Base Clock",
-  boostClock: "Boost Clock",
-  tdp: "TDP",
-  socket: "Socket",
-  cache: "Cache",
-  lithography: "Lithography",
-  vram: "VRAM",
-  cudaCores: "CUDA Cores",
-  memoryBus: "Memory Bus",
-  memoryBandwidth: "Memory Bandwidth",
-  // Dataset fields
-  core_count: "Cores",
-  core_clock: "Core Clock",
-  microarchitecture: "Architecture",
-  graphics: "Integrated Graphics",
-  chipset: "Chipset",
-  memory: "Memory (GB)",
-  speed: "Speed",
-  modules: "Modules",
-  price_per_gb: "Price/GB",
-  first_word_latency: "First Word Latency",
-  cas_latency: "CAS Latency",
-  capacity: "Capacity",
-  type: "Type",
-  form_factor: "Form Factor",
-  interface: "Interface",
-  wattage: "Wattage",
-  efficiency: "Efficiency",
-  modular: "Modular",
-  color: "Color",
-  length: "Length",
+  cores: "Cores", threads: "Threads", baseClock: "Base Clock", boostClock: "Boost Clock",
+  tdp: "TDP", socket: "Socket", cache: "Cache", lithography: "Lithography",
+  vram: "VRAM", cudaCores: "CUDA Cores", memoryBus: "Memory Bus", memoryBandwidth: "Memory Bandwidth",
+  core_count: "Cores", core_clock: "Core Clock", microarchitecture: "Architecture",
+  graphics: "iGPU", chipset: "Chipset", memory: "VRAM (GB)", speed: "Speed",
+  modules: "Modules", price_per_gb: "Price/GB", first_word_latency: "FWL",
+  cas_latency: "CAS", capacity: "Capacity", type: "Type", form_factor: "Form Factor",
+  interface: "Interface", wattage: "Wattage", efficiency: "Efficiency",
+  modular: "Modular", color: "Color", length: "Length",
 };
 
 const DIRECTIONS: Record<string, "higher" | "lower" | "neutral"> = {
-  cores: "higher",
-  threads: "higher",
-  boostClock: "higher",
-  core_clock: "higher",
-  speed: "higher",
-  wattage: "lower",
-  tdp: "lower",
-  memory: "higher",
-  core_count: "higher",
-  capacity: "higher",
+  cores: "higher", threads: "higher", boostClock: "higher", core_clock: "higher",
+  speed: "higher", wattage: "lower", tdp: "lower", memory: "higher",
+  core_count: "higher", capacity: "higher",
 };
 
-function getDirection(key: string): "higher" | "lower" | "neutral" {
-  return DIRECTIONS[key] || "neutral";
+function getSpecs(p: Part): Record<string, string> {
+  try { return JSON.parse(p.specs); } catch { return {}; }
 }
 
-function getSpecFields(type: string): string[] {
-  const t = type.toLowerCase();
-  if (t === "cpu") return CPU_SPECS;
-  if (t === "gpu") return GPU_SPECS;
-  // For other types, extract from the data
-  return [];
+// Skeleton loader component
+function Skeleton({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`animate-pulse rounded-lg`}
+      style={{ backgroundColor: "#1E293B" }}
+      {...{ className: undefined } as any}
+    >
+      <div className={`${className}`} />
+    </div>
+  );
 }
 
-function matchDatasetFields(datasetKeys: string[], knownFields: string[]): string[] {
-  const fieldMap: Record<string, string> = {
-    core_clock: "baseClock",
-    boost_clock: "boostClock",
-    core_count: "cores",
-  };
-  return knownFields.length
-    ? knownFields
-    : datasetKeys.filter((k) => SPEC_LABELS[k] && k !== "price" && k !== "name");
+// Search icon
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+    </svg>
+  );
+}
+
+// Close/X icon
+function CloseIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6L6 18M6 6l12 12"/>
+    </svg>
+  );
+}
+
+// Chevron icons
+function ChevronLeft() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6"/>
+    </svg>
+  );
+}
+function ChevronRight() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18l6-6-6-6"/>
+    </svg>
+  );
+}
+
+// Chip icon (comparison)
+function CpuIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>
+      <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M20 9h3M1 15h3M20 15h3"/>
+    </svg>
+  );
+}
+
+// Empty box icon
+function BoxIcon() {
+  return (
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+    </svg>
+  );
 }
 
 function CompareContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [loaded, setLoaded] = useState(false);
 
-  const [partTypes, setPartTypes] = useState<PartType[]>([]);
+  const [partTypes, setPartTypes] = useState<string[]>([]);
   const [parts, setParts] = useState<Part[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -121,192 +138,255 @@ function CompareContent() {
     [parts, selectedIds]
   );
 
-  // Fetch types on mount
+  // Entrance animation
+  useEffect(() => { setLoaded(true); }, []);
+
+  // Fetch types
   useEffect(() => {
     fetch("/api/parts?limit=1")
       .then((r) => r.json())
-      .then((data) => {
-        setPartTypes(data.types || []);
-      })
+      .then((d) => { setPartTypes(d.types || []); })
       .catch(() => {});
   }, []);
 
-  // Fetch parts on search/page/type change
   const fetchParts = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    const params = new URLSearchParams();
-    params.set("page", String(page));
-    params.set("limit", "50");
+    setLoading(true); setError(false);
+    const params = new URLSearchParams({ page: String(page), limit: "48" });
     if (searchQuery) params.set("search", searchQuery);
     if (selectedType) params.set("type", selectedType);
-
     try {
       const r = await fetch(`/api/parts?${params}`);
       if (!r.ok) throw new Error("Failed");
-      const data = await r.json();
-      setParts(data.parts);
-      setTotal(data.total);
-      setHasSearched(true);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
+      const d = await r.json();
+      setParts(d.parts); setTotal(d.total); setHasSearched(true);
+    } catch { setError(true); }
+    finally { setLoading(false); }
   }, [page, searchQuery, selectedType]);
 
-  useEffect(() => {
-    fetchParts();
-  }, [fetchParts]);
+  useEffect(() => { fetchParts(); }, [fetchParts]);
 
   function togglePart(id: string) {
     const ids = selectedIds.includes(id)
       ? selectedIds.filter((i) => i !== id)
       : [...selectedIds, id].slice(0, 4);
-    router.push(`/compare${ids.length ? `?parts=${ids.join(",")}` : ""}`, {
-      scroll: false,
-    });
+    router.push(`/compare${ids.length ? `?parts=${ids.join(",")}` : ""}`, { scroll: false });
   }
 
-  function getSpecs(p: Part): Record<string, string> {
-    try {
-      return JSON.parse(p.specs);
-    } catch {
-      return {};
-    }
-  }
-
-  // Check if selected parts are all the same type
   const partType = selectedParts.length > 0 ? selectedParts[0].type : null;
-  const validComparison =
-    partType && selectedParts.every((p) => p.type === partType);
-
-  const totalPages = Math.ceil(total / 50);
+  const validComparison = partType && selectedParts.every((p) => p.type === partType);
+  const totalPages = Math.ceil(total / 48);
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-lg font-semibold text-zinc-100 sm:text-xl">
-          Compare PC Parts
+    <main
+      className="mx-auto flex w-full max-w-7xl flex-1 flex-col"
+      style={{ padding: "24px 16px", transition: "opacity 300ms", opacity: loaded ? 1 : 0 }}
+    >
+      {/* Header section */}
+      <div style={{ marginBottom: "24px" }}>
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-exo)", color: "#F8FAFC" }}>
+          Compare <span style={{ color: "#22C55E" }}>PC Parts</span>
         </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          {total.toLocaleString()} parts across {partTypes.length} categories
+        <p style={{ marginTop: "4px", fontSize: "13px", color: "#64748B", fontFamily: "var(--font-roboto-mono)" }}>
+          {total.toLocaleString()} parts across {partTypes.length} categories &middot; select up to 4 to compare
         </p>
       </div>
 
-      {/* Search + Filters */}
-      <div className="mb-6 space-y-3">
+      {/* Search + Filter bar */}
+      <div style={{ marginBottom: "20px" }}>
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
+            <div style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+              <SearchIcon />
+            </div>
             <input
+              ref={inputRef}
               type="text"
-              placeholder="Search parts by brand, model..."
+              placeholder="Search by brand, model..."
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setPage(1);
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              className="w-full outline-none transition-all duration-200"
+              style={{
+                width: "100%",
+                padding: "14px 14px 14px 42px",
+                borderRadius: "12px",
+                border: "1px solid #1E293B",
+                backgroundColor: "#0F172A",
+                color: "#F8FAFC",
+                fontSize: "14px",
+                fontFamily: "var(--font-roboto-mono)",
+                outline: "none",
+                transition: "border-color 200ms",
               }}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 pl-10 text-sm text-zinc-100 placeholder-zinc-500 outline-none transition-colors focus:border-zinc-600"
+              onFocus={(e) => (e.target.style.borderColor = "#22C55E")}
+              onBlur={(e) => (e.target.style.borderColor = "#1E293B")}
             />
-            <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
           </div>
           <select
             value={selectedType}
-            onChange={(e) => {
-              setSelectedType(e.target.value);
-              setPage(1);
+            onChange={(e) => { setSelectedType(e.target.value); setPage(1); }}
+            style={{
+              padding: "14px 16px",
+              borderRadius: "12px",
+              border: "1px solid #1E293B",
+              backgroundColor: "#0F172A",
+              color: "#94A3B8",
+              fontSize: "13px",
+              fontFamily: "var(--font-roboto-mono)",
+              outline: "none",
+              cursor: "pointer",
+              minWidth: "160px",
+              transition: "border-color 200ms",
             }}
-            className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-300 outline-none transition-colors focus:border-zinc-600"
+            onFocus={(e) => (e.target.style.borderColor = "#22C55E")}
+            onBlur={(e) => (e.target.style.borderColor = "#1E293B")}
           >
             <option value="">All categories</option>
-            {partTypes.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
+            {partTypes.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
       </div>
 
-      {/* Selected parts chips */}
+      {/* Selected parts chips — bento header */}
       {selectedParts.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-zinc-500">Comparing:</span>
+        <div style={{
+          display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px",
+          marginBottom: "16px", padding: "12px 16px",
+          borderRadius: "12px", border: "1px solid #1E293B",
+          backgroundColor: "rgba(30,41,59,0.4)",
+          transition: "all 300ms",
+        }}>
+          <span style={{ fontSize: "11px", color: "#64748B", fontFamily: "var(--font-roboto-mono)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+            Comparing
+          </span>
           {selectedParts.map((p) => (
             <button
               key={p.id}
               onClick={() => togglePart(p.id)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-red-600 hover:text-red-400"
+              className="group"
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                padding: "6px 12px", borderRadius: "8px",
+                border: "1px solid #22C55E", backgroundColor: "rgba(34,197,94,0.08)",
+                color: "#F8FAFC", fontSize: "12px", cursor: "pointer",
+                fontFamily: "var(--font-roboto-mono)",
+                transition: "all 200ms",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#EF4444"; e.currentTarget.style.color = "#EF4444"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#22C55E"; e.currentTarget.style.color = "#F8FAFC"; }}
             >
+              <CpuIcon />
               {p.brand} {p.model}
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <CloseIcon />
             </button>
           ))}
-          <span className="text-xs text-zinc-600">{selectedParts.length}/4</span>
+          <span style={{ fontSize: "11px", color: "#475569", fontFamily: "var(--font-roboto-mono)" }}>
+            {selectedParts.length}/4
+          </span>
         </div>
       )}
 
-      {/* Main content */}
+      {/* Loading skeleton grid */}
       {loading && (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-sm text-zinc-500">Searching {total.toLocaleString()} parts...</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} style={{
+              padding: "16px", borderRadius: "12px",
+              border: "1px solid #1E293B", backgroundColor: "rgba(30,41,59,0.3)",
+            }}>
+              <div className="animate-pulse" style={{ height: "12px", width: "60%", backgroundColor: "#1E293B", borderRadius: "4px", marginBottom: "8px" }} />
+              <div className="animate-pulse" style={{ height: "10px", width: "80%", backgroundColor: "#1E293B", borderRadius: "4px", marginBottom: "12px" }} />
+              <div className="animate-pulse" style={{ height: "10px", width: "40%", backgroundColor: "#1E293B", borderRadius: "4px" }} />
+            </div>
+          ))}
         </div>
       )}
 
+      {/* Error state */}
       {error && (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="rounded-lg border border-amber-800 bg-amber-900/20 px-6 py-4 text-sm text-amber-400">
-            Failed to load parts. Check your connection.
+        <div style={{
+          display: "flex", flex: 1, alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            padding: "16px 24px", borderRadius: "12px",
+            border: "1px solid rgba(239,68,68,0.3)", backgroundColor: "rgba(239,68,68,0.08)",
+            color: "#EF4444", fontSize: "13px", fontFamily: "var(--font-roboto-mono)",
+          }}>
+            Connection error — could not load parts
           </div>
         </div>
       )}
 
+      {/* Content */}
       {!loading && !error && (
-        <div className="flex flex-1 flex-col gap-6">
-          {/* Parts grid (when selecting) */}
+        <>
+          {/* Parts grid — bento layout */}
           {selectedParts.length < 4 && parts.length > 0 && (
-            <div className="min-w-0">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs text-zinc-600">
-                  {total > 50 ? `Showing ${page}-${Math.min(page * 50, total)} of ${total.toLocaleString()}` : `${parts.length} results`}
+            <div>
+              <div style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                marginBottom: "10px",
+              }}>
+                <span style={{ fontSize: "11px", color: "#475569", fontFamily: "var(--font-roboto-mono)" }}>
+                  {total > 48
+                    ? `${(page - 1) * 48 + 1}–${Math.min(page * 48, total)} of ${total.toLocaleString()}`
+                    : `${parts.length} results`
+                  }
                 </span>
-                {partType && selectedParts.length < 4 && (
-                  <span className="text-xs text-zinc-600">
-                    Selected type: {partType}
+                {partType && (
+                  <span style={{ fontSize: "11px", color: "#22C55E", fontFamily: "var(--font-roboto-mono)" }}>
+                    {partType} only
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+
+              {/* Bento grid — 2 cols mobile, 3 tablet, 4 desktop, 5 wide */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
                 {parts
                   .filter((p) => !selectedIds.includes(p.id))
                   .filter((p) => !partType || p.type === partType)
-                  .map((p) => {
+                  .map((p, idx) => {
                     const price = p.prices?.[0];
                     return (
                       <button
                         key={p.id}
                         onClick={() => togglePart(p.id)}
-                        className="group rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 text-left text-xs transition-all hover:border-zinc-600 hover:bg-zinc-800/50"
+                        style={{
+                          padding: "14px", borderRadius: "12px",
+                          border: "1px solid #1E293B",
+                          backgroundColor: "rgba(30,41,59,0.3)",
+                          cursor: "pointer", textAlign: "left",
+                          fontSize: "12px", fontFamily: "var(--font-roboto-mono)",
+                          transition: "all 200ms",
+                          animation: loaded ? `fadeIn 300ms ${idx * 20}ms both` : "none",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = "#334155";
+                          e.currentTarget.style.backgroundColor = "rgba(30,41,59,0.6)";
+                          e.currentTarget.style.boxShadow = "0 0 20px rgba(34,197,94,0.05)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = "#1E293B";
+                          e.currentTarget.style.backgroundColor = "rgba(30,41,59,0.3)";
+                          e.currentTarget.style.boxShadow = "none";
+                        }}
                       >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="truncate font-medium text-zinc-200">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "4px", marginBottom: "4px" }}>
+                          <span style={{ fontWeight: 500, color: "#F8FAFC", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {p.brand}
                           </span>
-                          <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase text-zinc-500">
+                          <span style={{
+                            flexShrink: 0, padding: "2px 6px", borderRadius: "4px",
+                            backgroundColor: "#1E293B", fontSize: "9px",
+                            color: "#64748B", letterSpacing: "0.05em", textTransform: "uppercase",
+                          }}>
                             {p.type}
                           </span>
                         </div>
-                        <div className="mt-0.5 truncate text-zinc-400">{p.model}</div>
+                        <div style={{ color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: price ? "8px" : 0 }}>
+                          {p.model}
+                        </div>
                         {price && (
-                          <div className="mt-1.5 font-medium text-emerald-400">
+                          <div style={{ fontWeight: 500, color: "#22C55E" }}>
                             ${price.amount.toLocaleString()}
                           </div>
                         )}
@@ -317,35 +397,57 @@ function CompareContent() {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="mt-4 flex items-center justify-center gap-2">
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                  marginTop: "20px",
+                }}>
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1}
-                    className="rounded-lg border border-zinc-800 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-40"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "4px",
+                      padding: "8px 14px", borderRadius: "8px",
+                      border: "1px solid #1E293B", backgroundColor: "transparent",
+                      color: page === 1 ? "#1E293B" : "#64748B", fontSize: "12px",
+                      cursor: page === 1 ? "default" : "pointer",
+                      fontFamily: "var(--font-roboto-mono)", transition: "all 200ms",
+                    }}
+                    onMouseEnter={(e) => { if (page !== 1) { e.currentTarget.style.borderColor = "#334155"; e.currentTarget.style.color = "#F8FAFC"; }}}
+                    onMouseLeave={(e) => { if (page !== 1) { e.currentTarget.style.borderColor = "#1E293B"; e.currentTarget.style.color = "#64748B"; }}}
                   >
-                    ← Prev
+                    <ChevronLeft /> Prev
                   </button>
-                  <span className="text-xs text-zinc-600">
-                    Page {page} of {totalPages}
+                  <span style={{ fontSize: "12px", color: "#475569", fontFamily: "var(--font-roboto-mono)" }}>
+                    {page} / {totalPages}
                   </span>
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
-                    className="rounded-lg border border-zinc-800 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-40"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "4px",
+                      padding: "8px 14px", borderRadius: "8px",
+                      border: "1px solid #1E293B", backgroundColor: "transparent",
+                      color: page === totalPages ? "#1E293B" : "#64748B", fontSize: "12px",
+                      cursor: page === totalPages ? "default" : "pointer",
+                      fontFamily: "var(--font-roboto-mono)", transition: "all 200ms",
+                    }}
+                    onMouseEnter={(e) => { if (page !== totalPages) { e.currentTarget.style.borderColor = "#334155"; e.currentTarget.style.color = "#F8FAFC"; }}}
+                    onMouseLeave={(e) => { if (page !== totalPages) { e.currentTarget.style.borderColor = "#1E293B"; e.currentTarget.style.color = "#64748B"; }}}
                   >
-                    Next →
+                    Next <ChevronRight />
                   </button>
                 </div>
               )}
             </div>
           )}
 
-          {!loading && hasSearched && parts.length === 0 && (
-            <div className="flex flex-1 items-center justify-center">
-              <div className="text-center">
-                <div className="mb-1 text-2xl">🔍</div>
-                <div className="text-sm text-zinc-500">
-                  No parts match &quot;{searchQuery}&quot;
+          {/* No results */}
+          {hasSearched && parts.length === 0 && !loading && (
+            <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
+              <div style={{ textAlign: "center" }}>
+                <BoxIcon />
+                <div style={{ marginTop: "12px", fontFamily: "var(--font-exo)", color: "#64748B" }}>
+                  No parts match &ldquo;{searchQuery}&rdquo;
                 </div>
               </div>
             </div>
@@ -353,164 +455,170 @@ function CompareContent() {
 
           {/* Empty state */}
           {!hasSearched && selectedParts.length === 0 && (
-            <div className="flex flex-1 items-center justify-center">
-              <div className="text-center">
-                <div className="mb-2 text-4xl">🔍</div>
-                <div className="text-sm font-medium text-zinc-400">
-                  Search {total.toLocaleString()} parts to compare
+            <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
+              <div style={{ textAlign: "center", animation: loaded ? "fadeIn 500ms both" : "none" }}>
+                <BoxIcon />
+                <div style={{ marginTop: "12px", fontFamily: "var(--font-exo)", color: "#94A3B8", fontSize: "15px" }}>
+                  Search <span style={{ color: "#22C55E" }}>{total.toLocaleString()}</span> parts
                 </div>
-                <div className="mt-1 text-xs text-zinc-600">
-                  Select up to 4 parts of the same type
+                <div style={{ marginTop: "4px", fontSize: "12px", color: "#475569", fontFamily: "var(--font-roboto-mono)" }}>
+                  Select up to 4 of the same type to compare
                 </div>
               </div>
             </div>
           )}
-        </div>
+        </>
       )}
 
-      {/* Comparison Table */}
+      {/* ——— COMPARISON TABLE ——— */}
       {validComparison && selectedParts.length >= 2 && (
-        <div className="mt-6 overflow-x-auto">
-          <table className="w-full min-w-[600px] border-collapse">
-            <thead>
-              <tr className="border-b border-zinc-700">
-                <th className="w-44 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Spec
-                </th>
-                {selectedParts.map((p) => (
-                  <th key={p.id} className="px-4 py-3 text-left text-sm font-semibold text-zinc-200">
-                    {p.brand}
-                    <div className="text-xs font-normal text-zinc-500">{p.model}</div>
+        <div className="overflow-x-auto" style={{
+          marginTop: "24px",
+          animation: loaded ? "fadeIn 400ms both" : "none",
+        }}>
+          <div style={{
+            borderRadius: "12px", border: "1px solid #1E293B",
+            backgroundColor: "rgba(30,41,59,0.2)", overflow: "hidden",
+          }}>
+            <table style={{ width: "100%", minWidth: "500px", borderCollapse: "collapse", fontSize: "13px" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #1E293B" }}>
+                  <th style={{
+                    width: "160px", padding: "14px 16px", textAlign: "left",
+                    fontSize: "11px", fontWeight: 500, letterSpacing: "0.05em",
+                    color: "#475569", fontFamily: "var(--font-roboto-mono)", textTransform: "uppercase",
+                  }}>
+                    Spec
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {/* Price row */}
-              <tr className="border-b border-zinc-800">
-                <td className="px-4 py-3 text-xs font-medium text-zinc-400">Price</td>
-                {selectedParts.map((p) => {
-                  const price = p.prices?.[0];
-                  return (
-                    <td key={p.id} className="px-4 py-3 text-sm text-zinc-200">
-                      {price ? (
-                        <span className="font-medium text-emerald-400">
-                          ${price.amount.toLocaleString()}
-                        </span>
-                      ) : (
-                        <span className="text-zinc-600">—</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-
-              {/* Dynamic spec rows from specs JSON */}
-              {(() => {
-                const specsList = selectedParts.map((p) => getSpecs(p));
-                const allKeys = [...new Set(specsList.flatMap((s) => Object.keys(s)))];
-                const preferredKeys = getSpecFields(selectedParts[0].type);
-                const displayKeys = preferredKeys.filter((k) => allKeys.includes(k));
-                const extraKeys = allKeys.filter(
-                  (k) => !displayKeys.includes(k) && SPEC_LABELS[k]
-                );
-
-                const keys = [...displayKeys, ...extraKeys.slice(0, 10)];
-
-                return keys.map((key) => {
-                  const values = specsList.map((s) => s[key]);
-                  const direction = getDirection(key);
-                  const nums = values.map(
-                    (v) => parseFloat(String(v).replace(/[^0-9.]/g, ""))
-                  );
-                  const hasNums = nums.every((n) => !isNaN(n));
-                  const max = hasNums ? Math.max(...nums) : null;
-                  const min = hasNums ? Math.min(...nums) : null;
-
-                  return (
-                    <tr key={key} className="border-b border-zinc-800/50">
-                      <td className="px-4 py-2.5 text-xs text-zinc-500">
-                        {SPEC_LABELS[key] || key}
-                      </td>
-                      {values.map((v, i) => {
-                        const n = parseFloat(String(v || "0").replace(/[^0-9.]/g, ""));
-                        const isNum = !isNaN(n);
-                        let color = "text-zinc-300";
-                        if (isNum && max && min && max !== min) {
-                          if (direction === "higher" && n === max) color = "text-emerald-400";
-                          else if (direction === "higher" && n === min) color = "text-red-400";
-                          else if (direction === "lower" && n === min) color = "text-emerald-400";
-                          else if (direction === "lower" && n === max) color = "text-red-400";
+                  {selectedParts.map((p) => (
+                    <th key={p.id} style={{ padding: "14px 16px", textAlign: "left" }}>
+                      <div style={{ fontFamily: "var(--font-exo)", fontWeight: 600, color: "#F8FAFC" }}>{p.brand}</div>
+                      <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px", fontFamily: "var(--font-roboto-mono)" }}>{p.model}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Price */}
+                <tr style={{ borderBottom: "1px solid rgba(30,41,59,0.6)" }}>
+                  <td style={{ padding: "12px 16px", color: "#64748B", fontSize: "11px", fontWeight: 500, fontFamily: "var(--font-roboto-mono)" }}>
+                    Price
+                  </td>
+                  {selectedParts.map((p) => {
+                    const price = p.prices?.[0];
+                    return (
+                      <td key={p.id} style={{ padding: "12px 16px", fontFamily: "var(--font-roboto-mono)" }}>
+                        {price
+                          ? <span style={{ fontWeight: 500, color: "#22C55E" }}>${price.amount.toLocaleString()}</span>
+                          : <span style={{ color: "#475569" }}>—</span>
                         }
-                        return (
-                          <td key={i} className={`px-4 py-2.5 text-sm ${color}`}>
-                            {v || "—"}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                });
-              })()}
-
-              {/* Benchmarks */}
-              {selectedParts.length >= 2 && (
-                <>
-                  <tr className="border-b border-zinc-700">
-                    <td colSpan={selectedParts.length + 1}
-                      className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Benchmarks
-                    </td>
-                  </tr>
-                  {Object.keys(BENCHMARK_LABELS).map((benchKey) => {
-                    const values = selectedParts.map((p) =>
-                      p.benchmarks.find((b) => b.benchmark === benchKey)
+                      </td>
                     );
-                    const hasAny = values.some((v) => v !== undefined);
-                    if (!hasAny) return null;
-                    const scores = values.map((v) => v?.score ?? 0);
-                    const maxScore = Math.max(...scores);
+                  })}
+                </tr>
+
+                {/* Dynamic specs */}
+                {(() => {
+                  const specsList = selectedParts.map((p) => getSpecs(p));
+                  const allKeys = [...new Set(specsList.flatMap((s) => Object.keys(s)))];
+                  const t = selectedParts[0].type.toLowerCase();
+                  const pref = t === "cpu" ? CPU_KEYS : t === "gpu" ? GPU_KEYS : [];
+                  const displayKeys = pref.filter((k) => allKeys.includes(k));
+                  const extra = allKeys.filter((k) => !displayKeys.includes(k) && SPEC_LABELS[k]);
+                  const keys = [...displayKeys, ...extra.slice(0, 10)];
+
+                  return keys.map((key) => {
+                    const values = specsList.map((s) => s[key]);
+                    const dir = DIRECTIONS[key] || "neutral";
+                    const nums = values.map((v) => parseFloat(String(v).replace(/[^0-9.]/g, "")));
+                    const hasNums = nums.every((n) => !isNaN(n));
+                    const max = hasNums ? Math.max(...nums) : null;
+                    const min = hasNums ? Math.min(...nums) : null;
 
                     return (
-                      <tr key={benchKey} className="border-b border-zinc-800/50">
-                        <td className="px-4 py-2.5 text-xs text-zinc-500">
-                          {BENCHMARK_LABELS[benchKey]}
+                      <tr key={key} style={{ borderBottom: "1px solid rgba(30,41,59,0.3)" }}>
+                        <td style={{ padding: "10px 16px", color: "#64748B", fontSize: "11px", fontFamily: "var(--font-roboto-mono)" }}>
+                          {SPEC_LABELS[key] || key}
                         </td>
                         {values.map((v, i) => {
-                          const isBest = v?.score === maxScore && maxScore > 0;
+                          const n = parseFloat(String(v || "0").replace(/[^0-9.]/g, ""));
+                          const isNum = !isNaN(n);
+                          let color = "#94A3B8";
+                          if (isNum && max && min && max !== min) {
+                            if (dir === "higher" && n === max) color = "#22C55E";
+                            else if (dir === "higher" && n === min) color = "#EF4444";
+                            else if (dir === "lower" && n === min) color = "#22C55E";
+                            else if (dir === "lower" && n === max) color = "#EF4444";
+                          }
                           return (
-                            <td key={i}
-                              className={`px-4 py-2.5 text-sm ${
-                                v ? (isBest ? "text-emerald-400" : "text-zinc-300") : "text-zinc-600"
-                              }`}
-                            >
-                              {v ? `${v.score.toLocaleString()} ${v.unit}` : "—"}
+                            <td key={i} style={{ padding: "10px 16px", color, fontFamily: "var(--font-roboto-mono)", fontSize: "12px" }}>
+                              {v || "—"}
                             </td>
                           );
                         })}
                       </tr>
                     );
-                  })}
-                </>
-              )}
-            </tbody>
-          </table>
+                  });
+                })()}
+
+                {/* Benchmarks */}
+                {selectedParts.length >= 2 && (
+                  <>
+                    <tr style={{ borderBottom: "1px solid #1E293B" }}>
+                      <td colSpan={selectedParts.length + 1} style={{
+                        padding: "12px 16px", fontSize: "11px", fontWeight: 500,
+                        letterSpacing: "0.05em", color: "#475569",
+                        fontFamily: "var(--font-roboto-mono)", textTransform: "uppercase",
+                      }}>
+                        Benchmarks
+                      </td>
+                    </tr>
+                    {Object.keys(BENCHMARK_LABELS).map((bk) => {
+                      const vals = selectedParts.map((p) => p.benchmarks.find((b) => b.benchmark === bk));
+                      if (!vals.some(Boolean)) return null;
+                      const sc = vals.map((v) => v?.score ?? 0);
+                      const mx = Math.max(...sc);
+                      return (
+                        <tr key={bk} style={{ borderBottom: "1px solid rgba(30,41,59,0.3)" }}>
+                          <td style={{ padding: "10px 16px", color: "#64748B", fontSize: "11px", fontFamily: "var(--font-roboto-mono)" }}>
+                            {BENCHMARK_LABELS[bk]}
+                          </td>
+                          {vals.map((v, i) => (
+                            <td key={i} style={{
+                              padding: "10px 16px", fontSize: "12px",
+                              color: v ? (v.score === mx && mx > 0 ? "#22C55E" : "#94A3B8") : "#475569",
+                              fontFamily: "var(--font-roboto-mono)",
+                            }}>
+                              {v ? `${v.score.toLocaleString()} ${v.unit}` : "—"}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {/* Mobile cards */}
-          <div className="mt-6 block md:hidden">
-            <div className="space-y-4">
+          <div style={{ marginTop: "16px", display: "block" }} className="md:hidden">
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {selectedParts.map((p) => {
-                const specs = getSpecs(p);
+                const sp = getSpecs(p);
                 return (
-                  <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-                    <div className="mb-2 font-semibold text-zinc-200">
+                  <div key={p.id} style={{
+                    padding: "16px", borderRadius: "12px",
+                    border: "1px solid #1E293B", backgroundColor: "rgba(30,41,59,0.3)",
+                  }}>
+                    <div style={{ fontFamily: "var(--font-exo)", fontWeight: 600, color: "#F8FAFC", marginBottom: "8px" }}>
                       {p.brand} {p.model}
                     </div>
-                    <div className="space-y-1 text-xs text-zinc-400">
-                      {Object.entries(specs).slice(0, 10).map(([k, v]) => (
-                        <div key={k} className="flex justify-between">
-                          <span>{SPEC_LABELS[k] || k}</span>
-                          <span className="text-zinc-300">{v}</span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {Object.entries(sp).slice(0, 10).map(([k, v]) => (
+                        <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", fontFamily: "var(--font-roboto-mono)" }}>
+                          <span style={{ color: "#64748B" }}>{SPEC_LABELS[k] || k}</span>
+                          <span style={{ color: "#94A3B8" }}>{v}</span>
                         </div>
                       ))}
                     </div>
@@ -524,10 +632,31 @@ function CompareContent() {
 
       {/* Wrong type warning */}
       {selectedParts.length >= 2 && !validComparison && (
-        <div className="mt-4 rounded-lg border border-amber-800 bg-amber-900/20 px-4 py-3 text-sm text-amber-400">
-          Parts must be the same type to compare. Clear selection and choose parts from one category.
+        <div style={{
+          marginTop: "16px", padding: "12px 16px", borderRadius: "12px",
+          border: "1px solid rgba(239,68,68,0.3)", backgroundColor: "rgba(239,68,68,0.08)",
+          color: "#EF4444", fontSize: "12px", fontFamily: "var(--font-roboto-mono)",
+        }}>
+          Parts must be the same type to compare. Choose parts from one category.
         </div>
       )}
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+        .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        *:focus-visible { outline: 2px solid #22C55E; outline-offset: 2px; border-radius: 4px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0F172A; }
+        ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+      `}</style>
     </main>
   );
 }
@@ -535,7 +664,18 @@ function CompareContent() {
 export default function ComparePage() {
   return (
     <Suspense
-      fallback={<div className="flex flex-1 items-center justify-center text-zinc-500">Loading...</div>}
+      fallback={
+        <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0F172A" }}>
+          <div className="animate-pulse" style={{ width: "100%", maxWidth: "1200px", padding: "24px" }}>
+            <div style={{ height: "20px", width: "200px", backgroundColor: "#1E293B", borderRadius: "6px", marginBottom: "24px" }} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} style={{ height: "100px", backgroundColor: "#1E293B", borderRadius: "12px" }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      }
     >
       <CompareContent />
     </Suspense>
