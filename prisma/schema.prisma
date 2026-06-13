@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Part {
+  id          String       @id @default(cuid())
+  type        String       // "CPU" | "GPU" | "RAM" | "Motherboard" | "Storage" | "PSU" | "Case"
+  brand       String       // "AMD", "NVIDIA", "Intel", etc.
+  model       String       // "Ryzen 7 7800X3D"
+  specs       String       // JSON string — type-specific key/value pairs
+  imageUrl    String?      @map("image_url")
+  releasedAt  DateTime?    @map("released_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  prices      PricePoint[]
+  benchmarks  Benchmark[]
+
+  @@unique([type, brand, model])
+  @@map("parts")
+}
+
+model PricePoint {
+  id        String   @id @default(cuid())
+  partId    String   @map("part_id")
+  part      Part     @relation(fields: [partId], references: [id])
+  retailer  String   // "amazon", "newegg", "manual"
+  amount    Float
+  currency  String   @default("USD")
+  url       String?
+  fetchedAt DateTime @default(now()) @map("fetched_at")
+
+  @@unique([partId, retailer])
+  @@map("price_points")
+}
+
+model Benchmark {
+  id          String   @id @default(cuid())
+  partId      String   @map("part_id")
+  part        Part     @relation(fields: [partId], references: [id])
+  source      String   // "manual", "techpowerup", "user_submitted"
+  benchmark   String   // "cinebench_r23_mt", "3dmark_time_spy", "passmark_cpu"
+  score       Float
+  unit        String   // "points", "fps", "seconds"
+  testedAt    DateTime? @map("tested_at")
+  stale       Boolean  @default(false)
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  @@unique([partId, benchmark])
+  @@map("benchmarks")
+}
