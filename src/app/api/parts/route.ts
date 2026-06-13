@@ -24,10 +24,19 @@ export async function GET(request: NextRequest) {
 
     if (idsParam) {
       const ids = idsParam.split(",").filter(Boolean);
-      if (ids.length) where.id = { in: ids };
+      if (ids.length && search) {
+        // When both ids and search are present, use OR: selected parts OR search results
+        where.OR = [
+          { id: { in: ids } },
+          { brand: { contains: search } },
+          { model: { contains: search } },
+        ];
+      } else if (ids.length) {
+        where.id = { in: ids };
+      }
     }
 
-    if (search) {
+    if (search && !idsParam) {
       where.OR = [
         { brand: { contains: search } },
         { model: { contains: search } },

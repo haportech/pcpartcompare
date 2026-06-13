@@ -154,9 +154,9 @@ function CompareContent() {
     const params = new URLSearchParams({ page: String(page), limit: "48" });
     if (searchQuery) params.set("search", searchQuery);
     if (selectedType) params.set("type", selectedType);
-    if (selectedIds.length && !searchQuery && !selectedType) {
+    if (selectedIds.length) {
       params.set("ids", selectedIds.join(","));
-      params.delete("page");
+      if (!searchQuery && !selectedType) params.delete("page");
     }
     try {
       const r = await fetch(`/api/parts?${params}`);
