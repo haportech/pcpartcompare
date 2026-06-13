@@ -1,0 +1,12 @@
+{
+  "name": "pcpartcompare",
+  "compatibility_date": "2026-06-13",
+  "pages_build_output_dir": ".vercel/output/static",
+  "compatibility_flags": ["nodejs_compat"],
+  "build": {
+    "command": "npx @opennextjs/cloudflare"
+  },
+  "routes": [
+    { "pattern": "/api/*", "zone_id": "", "custom_domain": true }
+  ]
+}

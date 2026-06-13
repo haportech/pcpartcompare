@@ -52,6 +52,31 @@ GET /api/parts         → { parts: Part[] } with nested prices[] and benchmarks
 
 13 parts across 6 CPU models (AMD Ryzen 7000 series, Intel Core 14th gen) and 7 GPU models (NVIDIA RTX 40 series, AMD Radeon RX 7000 series), each with 2-4 benchmarks and 1 manual price.
 
+## Deploy to Cloudflare Pages
+
+```bash
+# 1. Set up Turso database (free)
+npm install -g turso
+turso auth login
+turso db create pcpartcompare
+turso db show pcpartcompare --url       # copy the URL
+turso db tokens create pcpartcompare     # copy the token
+
+# 2. Set DATABASE_URL in Cloudflare Pages dashboard
+#    Settings → Environment variables → Add:
+#    DATABASE_URL = libsql://pcpartcompare.turso.io?authToken=YOUR_TOKEN
+
+# 3. Connect repo to Cloudflare Pages
+#    Dashboard → Pages → Connect Git → haportech/pcpartcompare
+#    Build command: npx @opennextjs/cloudflare
+#    Build output: .vercel/output/static
+
+# 4. Set custom domain
+#    Pages → pcpartcompare → Custom domains → Add domain
+```
+
+Requires a [Turso](https://turso.tech) database (free tier, no credit card) for the edge-hosted SQLite backend. Local SQLite won't work on Cloudflare's serverless platform.
+
 ## v2 Roadmap
 
 - Amazon Creators API pricing pipeline

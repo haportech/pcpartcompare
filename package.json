@@ -8,11 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "npx tsx prisma/seed.ts",
+    "cf:build": "npx @opennextjs/cloudflare",
+    "cf:deploy": "npx wrangler pages deploy",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
+    "@opennextjs/cloudflare": "^1.19.11",
     "@prisma/adapter-libsql": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "dotenv": "^17.4.2",
